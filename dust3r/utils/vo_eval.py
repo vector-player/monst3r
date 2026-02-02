@@ -3,14 +3,33 @@ import re
 from copy import deepcopy
 from pathlib import Path
 
-import evo.main_ape as main_ape
-import evo.main_rpe as main_rpe
+import matplotlib
+matplotlib.use('Agg')  # Set backend before importing evo
 import matplotlib.pyplot as plt
 import numpy as np
-from evo.core import sync
-from evo.core.metrics import PoseRelation, Unit
-from evo.core.trajectory import PosePath3D, PoseTrajectory3D
-from evo.tools import file_interface, plot
+
+# Import evo with error handling for settings issues
+try:
+    import evo.main_ape as main_ape
+    import evo.main_rpe as main_rpe
+    from evo.core import sync
+    from evo.core.metrics import PoseRelation, Unit
+    from evo.core.trajectory import PosePath3D, PoseTrajectory3D
+    from evo.tools import file_interface, plot
+except Exception as e:
+    # If evo import fails due to settings, try to fix it
+    import evo.tools.settings as evo_settings
+    if hasattr(evo_settings, 'SETTINGS'):
+        try:
+            evo_settings.SETTINGS.plot_backend = 'Agg'
+        except:
+            pass
+    import evo.main_ape as main_ape
+    import evo.main_rpe as main_rpe
+    from evo.core import sync
+    from evo.core.metrics import PoseRelation, Unit
+    from evo.core.trajectory import PosePath3D, PoseTrajectory3D
+    from evo.tools import file_interface, plot
 from scipy.spatial.transform import Rotation
 
 
