@@ -453,23 +453,56 @@ The 45° rotation serves a specific geometric purpose:
 2. **Vertex Selection**: The image plane uses specific cone vertices `[4, 5, 1, 3]` to form a square
 3. **Orientation**: Without rotation, the square base is axis-aligned; the 45° rotation aligns these vertices correctly for the image plane
 
+**Simple 2D View (Top-Down):**
 ```
-Before rot45 (axis-aligned):
-     +Y
-      |
-      |
-  +---+---+---> +X
-      |
-      |
-      
-After rot45 (rotated 45°):
-     +Y
-      |
-      \
-       \
-    +---+---> +X
-       /
-      /
+Before rot45 (axis-aligned square base):
+                    +Y (down)
+                     |
+                     |
+        ┌────────────┼────────────┐
+        │            │            │
+        │     Base Square         │
+        │   (aligned with axes)   │
+        │            │            │
+        └────────────┼────────────┘
+                     │
+        ─────────────┼────────────> +X (right)
+                     │
+                  Tip (origin)
+                     │
+                  +Z (out of page)
+
+After rot45 (rotated 45° square base):
+                    +Y (down)
+                     |
+                     │  45°
+                     │ ╱
+                     │╱
+        ─────────────┼────────────> +X (right)
+                    ╱│
+                   ╱ │
+                  ╱  │
+                 ╱   │
+                ╱    │ Base Square
+               ╱     │ (diagonal)
+              ╱      │
+             ╱       │
+            ╱        │
+           ╱         │
+          ╱          │
+         ╱           │
+        ╱            │
+       ╱             │
+      ╱              │
+     ╱               │
+    ╱                │
+   ╱                 │
+  ╱                  │
+ ╱                   │
+╱                    │
+Tip (origin)         │
+                     │
+                  +Z (out of page)
 ```
 
 ### Mathematical Details
@@ -490,6 +523,200 @@ R_z(45°) = [[cos(45°), -sin(45°), 0],
 ```
 
 The translation `-height` along Z positions the cone tip (optical center) at the correct location relative to the image plane.
+
+### Orthographic View Diagrams
+
+The following diagrams show the pyramid's position and orientation from orthographic views (top and side):
+
+#### Top View (XY Plane, Looking Down +Z Axis)
+
+**Before rot45 (Axis-Aligned):**
+```
+                    +Y (down)
+                     |
+                     |
+                     |
+        ┌────────────┼────────────┐
+        │            │            │
+        │            │            │
+        │      Base Square        │
+        │    (axis-aligned)       │
+        │            │            │
+        │            │            │
+        └────────────┼────────────┘
+                     │
+                     │
+        ─────────────┼────────────> +X (right)
+                     │
+                  Tip (0,0,0)
+                     │
+                  +Z (forward, out of page)
+```
+
+**After rot45 (Rotated 45° around Z-axis):**
+```
+                    +Y (down)
+                     |
+                     |
+                     |
+        ┌────────────┼────────────┐
+        │            │            │
+        │            │            │
+        │      Base Square        │
+        │    (rotated 45°)        │
+        │            │            │
+        │            │            │
+        └────────────┼────────────┘
+                     │
+                     │
+        ─────────────┼────────────> +X (right)
+                     │
+                  Tip (0,0,0)
+                     │
+                  +Z (forward, out of page)
+                     │
+                 45° rotation
+```
+
+**Detailed Top View Showing 45° Angle:**
+```
+                    +Y
+                     |
+                     |
+                     |
+                     │
+                     │  45°
+                     │  ╱
+                     │ ╱
+                     │╱
+        ─────────────┼────────────> +X
+                    ╱│
+                   ╱ │
+                  ╱  │
+                 ╱   │
+                ╱    │
+               ╱     │
+              ╱      │
+             ╱       │
+            ╱        │
+           ╱         │
+          ╱          │
+         ╱           │
+        ╱            │
+       ╱             │
+      ╱              │
+     ╱               │
+    ╱                │
+   ╱                 │
+  ╱                  │
+ ╱                   │
+╱                    │
+Tip (0,0,0)          │
+                     │
+                  Base Square
+                  (diagonal orientation)
+```
+
+#### Side View (XZ Plane, Looking Along -Y Axis)
+
+**Before rot45 Translation:**
+```
+                    +Z (forward)
+                     │
+                     │
+                     │ height
+                     │
+                     │
+                     │
+        ─────────────┼────────────> +X (right)
+                     │
+                     │
+                  Tip (0,0,0)
+                     │
+                  Base Square
+                  (at z = height)
+```
+
+**After rot45 Translation:**
+```
+                    +Z (forward)
+                     │
+                     │
+                     │
+                     │
+                     │
+        ─────────────┼────────────> +X (right)
+                     │
+                     │
+                  Base Square
+                  (at z = 0)
+                     │
+                     │ height
+                     │
+                     │
+                  Tip (0,0,-height)
+                  = Optical Center
+```
+
+#### Combined 3D Orthographic Views
+
+**Before rot45:**
+```
+Top View (XY):          Side View (XZ):
+     +Y                    +Z
+      |                      |
+      |                      |
+  ┌───┼───┐                  │
+  │   │   │                  │ height
+  │   │   │                  │
+  └───┼───┘                  │
+      │                      │
+  ────┼───> +X          ─────┼────> +X
+      │                      │
+    Tip                      Tip (0,0,0)
+   (0,0,0)                   │
+                              │
+                           Base
+```
+
+**After rot45 (45° rotation + translation):**
+```
+Top View (XY):          Side View (XZ):
+     +Y                    +Z
+      |                      |
+      |                      │
+  ┌───┼───┐                  │
+  │  ╱│╲  │                  │
+  │ ╱ │ ╲ │                  │
+  │╱  │  ╲│                  │
+  └───┼───┘                  │
+      │                      │
+  ────┼───> +X          ─────┼────> +X
+      │                      │
+    Tip                      Base (z=0)
+   (0,0,0)                   │
+   45° rotated               │ height
+                             │
+                          Tip (0,0,-height)
+                          = Optical Center
+```
+
+**Key Observations from Orthographic Views:**
+
+1. **Top View (XY plane)**:
+   - Before: Square base is axis-aligned with X and Y axes
+   - After: Square base is rotated 45° around Z-axis, creating a diamond orientation
+   - The 45° angle is clearly visible between the square's diagonal and the coordinate axes
+
+2. **Side View (XZ plane)**:
+   - Before: Tip at origin (0,0,0), base at z = height
+   - After: Base at z = 0, tip translated to z = -height (optical center)
+   - The translation along Z-axis is clearly visible
+
+3. **3D Effect**:
+   - The rotation occurs around the Z-axis (perpendicular to XY plane)
+   - The translation occurs along the Z-axis
+   - Combined: Pyramid rotates 45° in XY plane and shifts along Z-axis
 
 ### Why It's Visualization-Only
 
