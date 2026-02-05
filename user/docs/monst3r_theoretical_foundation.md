@@ -100,6 +100,57 @@ Blender's glTF importer automatically handles this conversion when importing GLB
 
 ## Camera Pose Representation
 
+### Camera Space vs World Space
+
+Understanding the difference between **camera space** and **world space** is fundamental to working with camera poses:
+
+#### Camera Space (Local Coordinate Frame)
+- **Origin**: Located at the camera's optical center
+- **+X axis**: Points to the right (from camera's perspective)
+- **+Y axis**: Points down (from camera's perspective, OpenCV convention)
+- **+Z axis**: Points forward (into the scene, along optical axis)
+- **Definition**: A coordinate system attached to the camera itself, where the camera is always at the origin looking down the +Z axis
+
+#### World Space (Global Coordinate Frame)
+- **Origin**: Fixed reference point in the 3D scene
+- **Axes**: Defined by the scene's coordinate system (OpenCV convention: +X right, +Y down, +Z forward)
+- **Definition**: A global coordinate system where all cameras and 3D points share the same reference frame
+
+#### Key Differences
+
+| Aspect | Camera Space | World Space |
+|--------|-------------|-------------|
+| **Origin** | Camera optical center | Fixed scene reference point |
+| **Orientation** | Relative to camera | Fixed global orientation |
+| **Mobility** | Moves with camera | Stationary |
+| **Purpose** | Local camera frame | Global scene frame |
+
+### Visual Representation
+
+```
+World Space (Global):
+                    ┌─────────────┐
+                    │   Scene     │
+                    │   Origin    │
+                    └──────┬──────┘
+                           │
+                           │  +Z (forward)
+                           │   │
+                           │   │
+                    ┌──────▼───┐
+                    │ Camera 1 │  Camera Space 1:
+                    │ (c2w_1)  │  - Origin at Camera 1
+                    └──────────┘  - +Z along optical axis
+                           │
+                           │
+                    ┌──────▼───┐
+                    │ Camera 2 │  Camera Space 2:
+                    │ (c2w_2)  │  - Origin at Camera 2
+                    └──────────┘  - +Z along optical axis
+```
+
+### Camera-to-World Transformation Matrix
+
 MonST3R represents camera poses as **camera-to-world** (`c2w`) transformation matrices:
 
 ```python
@@ -110,13 +161,79 @@ pose_c2w = [[R11, R12, R13, tx],
 ```
 
 Where:
-- **R** (3×3): Rotation matrix (camera orientation)
-- **t** (3×1): Translation vector (camera position)
+- **R** (3×3): Rotation matrix representing camera orientation in world space
+- **t** (3×1): Translation vector representing camera position in world space
 
+### Transformation Operations
+
+#### Camera Space → World Space
 The `pose_c2w` matrix transforms points from camera space to world space:
-```
+
+```python
 P_world = pose_c2w @ P_camera
 ```
+
+**Example:**
+- A point at `(0, 0, 1)` in camera space (1 unit forward along optical axis)
+- After transformation: `P_world = pose_c2w @ [0, 0, 1, 1]^T`
+- Result: The same point expressed in world coordinates
+
+#### World Space → Camera Space
+The inverse transformation converts world points to camera space:
+
+```python
+pose_w2c = inv(pose_c2w)  # World-to-camera
+P_camera = pose_w2c @ P_world
+```
+
+**Example:**
+- A 3D point in world space
+- After transformation: `P_camera = pose_w2c @ P_world`
+- Result: The point's coordinates relative to the camera
+
+### Physical Interpretation
+
+#### Rotation Component (R)
+The rotation matrix `R` encodes:
+- **Camera orientation**: How the camera is rotated in world space
+- **Column vectors**: The world-space directions of camera's local X, Y, Z axes
+  - Column 1: World direction of camera's +X axis
+  - Column 2: World direction of camera's +Y axis  
+  - Column 3: World direction of camera's +Z axis (optical axis)
+
+#### Translation Component (t)
+The translation vector `t` encodes:
+- **Camera position**: The location of camera's optical center in world space
+- **Direct mapping**: `t = [tx, ty, tz]^T` is the world-space position of the camera
+
+### Practical Example
+
+Consider a camera viewing a scene:
+
+```python
+# Camera pose (c2w matrix)
+pose_c2w = [[1,  0,  0,  5],   # Camera at x=5 in world space
+            [0,  1,  0,  2],   # Camera at y=2 in world space
+            [0,  0,  1,  3],   # Camera at z=3 in world space
+            [0,  0,  0,  1]]   # Identity rotation (aligned with world axes)
+
+# A point in camera space (1 unit forward along optical axis)
+P_camera = [0, 0, 1, 1]  # Homogeneous coordinates
+
+# Transform to world space
+P_world = pose_c2w @ P_camera
+# Result: [5, 2, 4, 1] - The point is now 1 unit forward from camera in world space
+
+# Camera position in world space
+camera_position = pose_c2w[:3, 3]  # [5, 2, 3]
+```
+
+### Why This Matters for MonST3R
+
+1. **Internal Representation**: MonST3R stores camera poses as `c2w` matrices in OpenCV convention
+2. **Point Projection**: To project 3D points to image coordinates, points must be in camera space
+3. **Scene Reconstruction**: All cameras share the same world space, enabling multi-view reconstruction
+4. **GLB Export**: Camera geometry is transformed from camera space to world space using `pose_c2w`
 
 ---
 
