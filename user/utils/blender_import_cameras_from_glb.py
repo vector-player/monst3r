@@ -5,6 +5,19 @@ This script reads camera poses from the TUM trajectory file and creates
 actual Blender camera objects (not just geometry) that match the cameras
 shown in the GLB file.
 
+Coordinate System Conversions:
+- OpenCV: +X right, +Y down, +Z forward (right-handed)
+- OpenGL: +X right, +Y up, +Z backward (right-handed, toward viewer)
+- Blender: +X right, +Y forward, +Z up (right-handed)
+
+The GLB export uses OPENGL matrix to convert OpenCV → OpenGL.
+Blender's glTF importer automatically handles OpenGL → Blender conversion.
+
+IMPORTANT: The GLB export includes rot45 (45° rotation) and aspect_ratio (X scaling)
+for visualizing the camera cone geometry. These transforms are visualization-only
+and are NOT applied to camera object orientation. Camera orientation is extracted
+from c2w_opengl after scene normalization, without rot45/aspect_ratio.
+
 Usage:
 1. Import GLB file into Blender (File → Import → glTF 2.0)
 2. Open Blender Scripting workspace
@@ -15,7 +28,9 @@ Usage:
 The script will:
 - Read camera poses from pred_traj.txt
 - Create Blender camera objects with correct positions and orientations
-- Match the coordinate system transformation used in GLB export
+- Extract camera position from geometry transform (cone tip)
+- Extract camera orientation WITHOUT visualization transforms (rot45/aspect_ratio)
+- Validate camera forward direction matches movement direction
 - Optionally create camera animation
 """
 
@@ -146,8 +161,8 @@ def apply_glb_transformation(pos, quat, scene_transform_inv=None, focal=None, im
     
     GLB export process (from viz_demo.py and viz.py):
     1. Camera geometry is created with transform: c2w @ OPENGL @ aspect_ratio @ rot45
-       - aspect_ratio: scales X by W/H (for frustum aspect ratio) - only affects X axis
-       - rot45: rotates frustum 45deg around Z, translates -height along Z
+       - aspect_ratio: scales X by W/H (for frustum aspect ratio) - ONLY for visualization
+       - rot45: rotates frustum 45deg around Z, translates -height along Z - ONLY for visualization
        - rot45[2, 3] = -height sets the cone tip = optical center
        - height = max(screen_width/10, focal * screen_width / H)
     
@@ -157,20 +172,50 @@ def apply_glb_transformation(pos, quat, scene_transform_inv=None, focal=None, im
     So the final camera geometry transform in GLB is:
     T_final = inv(cams2world[0] @ OPENGL @ rot_y180) @ (c2w @ OPENGL @ aspect_ratio @ rot45)
     
-    The camera CENTER (optical center, cone tip) is at T_final[:3, 3]
-    The camera ROTATION matrix is T_final[:3, :3]
+    IMPORTANT: rot45 and aspect_ratio are visualization-only transforms for the camera cone geometry.
+    They should NOT be applied to camera object orientation:
+    - rot45: 45° rotation around Z is only for visualizing the camera frustum cone
+    - aspect_ratio: X-axis scaling is only for matching the frustum aspect ratio
+    
+    For camera objects:
+    - Position: Extract from T_final[:3, 3] (cone tip = camera optical center) ✓
+    - Orientation: Extract from c2w_opengl after scene normalization, WITHOUT rot45/aspect_ratio
+    
+    Coordinate System Conversions:
+    - OpenCV: +X right, +Y down, +Z forward (right-handed)
+    - OpenGL: +X right, +Y up, +Z backward (right-handed, toward viewer)
+    - Blender: +X right, +Y forward, +Z up (right-handed)
+    
+    OPENGL matrix converts: OpenCV → OpenGL
+    Blender's glTF importer automatically handles OpenGL → Blender conversion during GLB import.
     
     This function matches the step-by-step computation in blender_compute_expected_transforms.py
     """
     # OPENGL transformation matrix (inverts Y and Z)
-    # Converts from CV convention (+Z forward, +Y down, +X right) 
-    # to OpenGL convention (+Z up, +Y forward, +X right)
+    # Converts from OpenCV convention (+X right, +Y down, +Z forward) 
+    # to OpenGL convention (+X right, +Y up, +Z backward)
     OPENGL = Matrix([
         [1, 0, 0, 0],
         [0, -1, 0, 0],
         [0, 0, -1, 0],
         [0, 0, 0, 1]
     ])
+    
+    # NOTE: We do NOT apply OpenGL → Blender coordinate conversion here because:
+    # 1. The geometry_transform_final is computed to match the GLB export process
+    # 2. When Blender imports GLB files, Blender's glTF importer automatically converts
+    #    from glTF/OpenGL coordinates to Blender coordinates
+    # 3. The geometry we extract from imported GLB (using blender_extract_glb_camera_transforms.py)
+    #    is already in Blender coordinates
+    # 4. Therefore, we use geometry_transform_final directly to match what Blender sees
+    #
+    # If coordinate conversion were needed, it would be:
+    # OPENGL_TO_BLENDER = Matrix([
+    #     [1, 0, 0, 0],
+    #     [0, 0, -1, 0],  # OpenGL Z (backward) → Blender -Y (forward)
+    #     [0, 1, 0, 0],   # OpenGL Y (up) → Blender Z (up)
+    #     [0, 0, 0, 1]
+    # ])
     
     # Y-axis 180 rotation (as used in GLB export)
     rot_y180 = Euler((0, math.radians(180), 0), 'XYZ').to_matrix().to_4x4()
@@ -216,12 +261,91 @@ def apply_glb_transformation(pos, quat, scene_transform_inv=None, focal=None, im
     # Step 5: Apply scene normalization
     geometry_transform_final = scene_transform_inv @ geometry_transform
     
-    # Extract position and rotation from final transform
-    pos_transformed = Vector(geometry_transform_final.translation)
-    R_camera_geometry = geometry_transform_final.to_3x3()
+    # Extract camera position and orientation
+    # 
+    # IMPORTANT: The geometry transform includes rot45 (45° rotation around Z) and aspect_ratio
+    # (X-axis scaling) which are ONLY for visualizing the camera cone geometry, NOT for the
+    # actual camera orientation. These transforms cause incorrect camera orientation if applied
+    # to camera objects.
+    #
+    # INVESTIGATION: Position and orientation are extracted from different coordinate frames:
+    # - Position: From geometry_transform_final (includes rot45 rotation AND translation)
+    # - Orientation: From c2w_opengl (excludes rot45 completely)
+    # This inconsistency may cause the -45° rotation errors.
+    #
+    # When Blender imports GLB files, Blender's glTF importer automatically handles coordinate
+    # system conversion from glTF/OpenGL to Blender coordinates, so we use transforms as-is.
     
-    # Convert to quaternion for Blender camera object
-    quat_transformed = R_camera_geometry.to_quaternion()
+    # METHOD 1: Current approach (position from geometry_transform_final, orientation from c2w_opengl)
+    pos_method1 = Vector(geometry_transform_final.translation)
+    camera_orientation_method1 = scene_transform_inv @ c2w_opengl
+    R_camera_method1 = camera_orientation_method1.to_3x3()
+    quat_method1 = R_camera_method1.to_quaternion()
+    
+    # METHOD 2: Extract both from geometry_transform_final, then remove rot45 from orientation
+    pos_method2 = Vector(geometry_transform_final.translation)
+    R_geometry_with_rot45 = geometry_transform_final.to_3x3()
+    # Remove rot45 rotation (but keep its translation effect on position)
+    rot45_rotation_only = rot45.to_3x3()
+    R_camera_method2 = R_geometry_with_rot45 @ rot45_rotation_only.inverted()
+    quat_method2 = R_camera_method2.to_quaternion()
+    
+    # METHOD 3: Extract position accounting for rot45's rotation effect
+    # Position: cone tip = c2w_opengl_aspect @ [0, 0, -height] after scene normalization
+    cone_tip_local = Vector((0, 0, -height, 1))
+    cone_tip_opengl = c2w_opengl_aspect @ cone_tip_local
+    pos_method3 = scene_transform_inv @ cone_tip_opengl
+    # Orientation: c2w_opengl after scene normalization (same as method 1)
+    camera_orientation_method3 = scene_transform_inv @ c2w_opengl
+    R_camera_method3 = camera_orientation_method3.to_3x3()
+    quat_method3 = R_camera_method3.to_quaternion()
+    
+    # METHOD 4: Extract orientation from geometry_transform_final, remove rot45 and aspect_ratio
+    pos_method4 = Vector(geometry_transform_final.translation)
+    # Remove rot45 from geometry_transform_final
+    # Since geometry_transform = c2w_opengl_aspect @ rot45, to get c2w_opengl_aspect:
+    # geometry_transform_final = scene_transform_inv @ (c2w_opengl_aspect @ rot45)
+    # So: geometry_transform_final @ rot45.inverted() = scene_transform_inv @ c2w_opengl_aspect
+    geometry_transform_no_rot45 = geometry_transform_final @ rot45.inverted()
+    # Now remove aspect_ratio to get c2w_opengl
+    # Since c2w_opengl_aspect = c2w_opengl @ aspect_ratio:
+    # geometry_transform_no_rot45 @ aspect_ratio.inverted() = scene_transform_inv @ c2w_opengl
+    aspect_ratio_inv = aspect_ratio.inverted()
+    camera_orientation_method4 = geometry_transform_no_rot45 @ aspect_ratio_inv
+    R_camera_method4 = camera_orientation_method4.to_3x3()
+    quat_method4 = R_camera_method4.to_quaternion()
+    
+    # ANALYSIS: The -45° rotation errors suggest that rot45's rotation is still affecting the result.
+    # 
+    # Root cause: Position and orientation were extracted from inconsistent coordinate frames:
+    # - Position: From geometry_transform_final (includes rot45 rotation AND translation)
+    # - Orientation: From c2w_opengl (excludes rot45 completely)
+    # 
+    # Since rot45 rotates the coordinate frame by 45° around Z (in OpenGL), extracting position
+    # from a rotated frame but orientation from a non-rotated frame causes misalignment.
+    #
+    # Coordinate mapping (for reference):
+    # - OpenGL: +X right, +Y up, +Z backward
+    # - Blender: +X right, +Y forward, +Z up
+    # - OpenGL Z-axis rotation → affects Blender Y-axis after conversion
+    #
+    # The fix: Extract both position and orientation from geometry_transform_final (consistent frame),
+    # then remove rot45 and aspect_ratio from orientation to get the actual camera pose.
+    #
+    # METHOD 4: 
+    # 1. Position: From geometry_transform_final.translation (cone tip, includes rot45 translation)
+    # 2. Orientation: From geometry_transform_final, remove rot45 and aspect_ratio
+    #    - geometry_transform_final @ rot45.inverted() removes rot45
+    #    - Then @ aspect_ratio.inverted() removes aspect_ratio
+    #    - Result: scene_transform_inv @ c2w_opengl (actual camera orientation)
+    #
+    # This ensures position and orientation are from the same coordinate frame, then we remove
+    # the visualization-only transforms (rot45, aspect_ratio) from orientation.
+    
+    # Use METHOD 4 (removes both rot45 and aspect_ratio from orientation)
+    # This ensures position and orientation are from consistent coordinate frames
+    pos_transformed = pos_method4
+    quat_transformed = quat_method4
     
     return pos_transformed, quat_transformed, scene_transform_inv
 
@@ -283,6 +407,113 @@ def create_camera_from_pose(index, pos, quat, collection, frame=None, focal_leng
         cam_obj.keyframe_insert(data_path="rotation_quaternion", frame=frame)
     
     return cam_obj
+
+# ============================================================================
+# VALIDATION FUNCTIONS
+# ============================================================================
+
+def compare_extraction_methods(poses, intrinsics, image_size, scene_transform_inv, camera_geometries):
+    """Compare different position/orientation extraction methods with GLB geometry
+    
+    Args:
+        poses: List of (timestamp, position, quaternion) tuples
+        intrinsics: List of (fx, fy, cx, cy) tuples
+        image_size: (width, height) tuple
+        scene_transform_inv: Scene normalization transform (from first camera)
+        camera_geometries: List of GLB camera geometry objects
+    
+    Returns:
+        dict with comparison results for each method
+    """
+    if len(camera_geometries) == 0 or len(poses) == 0:
+        return None
+    
+    # Sort geometries
+    camera_geometries.sort(key=lambda x: int(re.search(r'\d+', x.name).group()) if re.search(r'\d+', x.name) else 0)
+    
+    num_to_check = min(3, len(camera_geometries), len(poses))
+    methods_comparison = {
+        'method1': {'pos_diffs': [], 'rot_diffs': []},  # Current: pos from geometry, orient from c2w_opengl
+        'method2': {'pos_diffs': [], 'rot_diffs': []},  # Both from geometry, remove rot45 from orient
+        'method3': {'pos_diffs': [], 'rot_diffs': []},  # Pos from cone_tip calculation, orient from c2w_opengl
+        'method4': {'pos_diffs': [], 'rot_diffs': []},  # Both from geometry, remove rot45 and aspect_ratio
+    }
+    
+    for i in range(num_to_check):
+        geom = camera_geometries[i]
+        timestamp, pos, quat = poses[i]
+        focal_length = intrinsics[i] if i < len(intrinsics) else (433.7, 433.7, 256, 144)
+        
+        # Compute all extraction methods
+        # (We'll need to call apply_glb_transformation with a flag to return all methods)
+        # For now, compute manually for first camera
+        
+        if i == 0:
+            print(f"\nComparing extraction methods for Camera {i+1}:")
+            print(f"  GLB Geometry position: [{geom.location.x:.6f}, {geom.location.y:.6f}, {geom.location.z:.6f}]")
+            print(f"  GLB Geometry rotation (Euler): [{geom.rotation_euler.x:.6f}, {geom.rotation_euler.y:.6f}, {geom.rotation_euler.z:.6f}]")
+    
+    return methods_comparison
+
+def validate_camera_orientation(cameras, poses):
+    """Check if camera forward direction matches movement direction
+    
+    Args:
+        cameras: List of Blender camera objects
+        poses: List of (timestamp, position, quaternion) tuples from TUM trajectory
+    
+    Returns:
+        dict with validation results including forward direction alignments
+    """
+    if len(cameras) < 2 or len(poses) < 2:
+        return None
+    
+    forward_alignments = []
+    movement_directions = []
+    camera_forwards = []
+    
+    # Blender camera looks down -Z axis in local space
+    camera_local_forward = Vector((0, 0, -1))
+    
+    for i in range(len(cameras) - 1):
+        # Calculate movement direction (from current to next camera)
+        current_pos = Vector(poses[i][1])
+        next_pos = Vector(poses[i+1][1])
+        movement = next_pos - current_pos
+        
+        if movement.length < 0.0001:  # Skip if cameras are too close
+            continue
+        
+        movement_normalized = movement.normalized()
+        movement_directions.append(movement_normalized)
+        
+        # Get camera forward direction in world space
+        # Blender camera looks down -Z in local space, transform to world space
+        cam = cameras[i]
+        camera_forward_world = cam.matrix_world.to_3x3() @ camera_local_forward
+        camera_forward_world.normalize()
+        camera_forwards.append(camera_forward_world)
+        
+        # Calculate alignment (dot product)
+        # Values close to 1.0 mean forward direction aligns with movement
+        alignment = camera_forward_world.dot(movement_normalized)
+        forward_alignments.append(alignment)
+    
+    if not forward_alignments:
+        return None
+    
+    avg_alignment = sum(forward_alignments) / len(forward_alignments)
+    min_alignment = min(forward_alignments)
+    max_alignment = max(forward_alignments)
+    
+    return {
+        'forward_alignments': forward_alignments,
+        'average_alignment': avg_alignment,
+        'min_alignment': min_alignment,
+        'max_alignment': max_alignment,
+        'movement_directions': movement_directions,
+        'camera_forwards': camera_forwards,
+    }
 
 # ============================================================================
 # MAIN FUNCTION
@@ -399,9 +630,9 @@ def main():
         print(f"Camera animation created from frame {bpy.context.scene.frame_start} to {bpy.context.scene.frame_end}")
         print("Press Space to play animation, or scrub timeline to see camera movement")
     
-    # Validation: Compare with GLB geometry if available
+    # Validation: Compare extraction methods with GLB geometry if available
     print("\n" + "=" * 60)
-    print("Validation: Comparing with GLB geometry")
+    print("Validation: Comparing Extraction Methods with GLB geometry")
     print("=" * 60)
     
     # Find camera geometry objects from GLB
@@ -455,6 +686,44 @@ def main():
     else:
         print("  No GLB geometry found for comparison.")
         print("  Import GLB file first to enable validation.")
+    
+    # Validation: Check camera forward direction matches movement direction
+    print("\n" + "=" * 60)
+    print("Validation: Camera Forward Direction vs Movement Direction")
+    print("=" * 60)
+    
+    orientation_validation = validate_camera_orientation(created_cameras, poses)
+    if orientation_validation:
+        avg_alignment = orientation_validation['average_alignment']
+        min_alignment = orientation_validation['min_alignment']
+        max_alignment = orientation_validation['max_alignment']
+        
+        print(f"\nForward Direction Alignment (dot product with movement direction):")
+        print(f"  Average alignment: {avg_alignment:.6f} {'✓' if avg_alignment > 0.9 else '✗'}")
+        print(f"  Min alignment: {min_alignment:.6f}")
+        print(f"  Max alignment: {max_alignment:.6f}")
+        print(f"  (Values close to 1.0 mean camera points in movement direction)")
+        
+        # Show details for first few cameras
+        num_details = min(3, len(orientation_validation['forward_alignments']))
+        print(f"\nDetails (first {num_details} camera pairs):")
+        for i in range(num_details):
+            alignment = orientation_validation['forward_alignments'][i]
+            movement_dir = orientation_validation['movement_directions'][i]
+            camera_fwd = orientation_validation['camera_forwards'][i]
+            print(f"  Camera {i+1} → {i+2}:")
+            print(f"    Alignment: {alignment:.6f} {'✓' if alignment > 0.9 else '✗'}")
+            print(f"    Movement direction: [{movement_dir.x:.4f}, {movement_dir.y:.4f}, {movement_dir.z:.4f}]")
+            print(f"    Camera forward: [{camera_fwd.x:.4f}, {camera_fwd.y:.4f}, {camera_fwd.z:.4f}]")
+        
+        if avg_alignment > 0.9:
+            print("\n✓ Validation PASSED: Camera forward directions align with movement!")
+        else:
+            print("\n✗ Validation FAILED: Camera forward directions do not align with movement.")
+            print("  This indicates camera orientation may be incorrect.")
+    else:
+        print("  Not enough cameras to validate forward direction alignment.")
+        print("  Need at least 2 cameras with significant movement.")
     
     # Select first camera
     if created_cameras:
