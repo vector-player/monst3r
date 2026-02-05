@@ -228,12 +228,134 @@ P_world = pose_c2w @ P_camera
 camera_position = pose_c2w[:3, 3]  # [5, 2, 3]
 ```
 
+### Why Camera Space is Fundamental to Pose Conversion
+
+**The Fundamental Question**: Why do we need camera space at all? Why not just work directly in world space?
+
+The answer lies in understanding what camera space represents and why pose conversion is necessary:
+
+#### 1. Camera Space is the Camera's Natural Frame
+
+Every camera operates in its **own local coordinate system**:
+- The camera's optical center is always at the origin `(0, 0, 0)` in camera space
+- The camera always looks down its +Z axis (optical axis) in camera space
+- Camera intrinsics (focal length, principal point) are defined in camera space
+- **The camera doesn't "know" about world space** - it only sees things relative to itself
+
+```
+Camera Space (Camera's Perspective):
+    ┌─────────────┐
+    │   Camera    │  Camera always at origin (0,0,0)
+    │   (0,0,0)   │  Camera always looks along +Z
+    └──────┬──────┘  Everything measured relative to camera
+           │
+           │ +Z (optical axis)
+           │
+           ▼
+```
+
+#### 2. The Camera Pose IS the Conversion
+
+The camera pose (`pose_c2w`) **is precisely the conversion** between camera space and world space:
+
+- **Without pose conversion**: Each camera exists in isolation, unable to relate to other cameras or world coordinates
+- **With pose conversion**: We can transform between "where things are relative to this camera" (camera space) and "where things are in the global scene" (world space)
+
+```
+The Camera Pose (c2w) IS the bridge:
+
+Camera Space          pose_c2w          World Space
+─────────────        ────────          ───────────
+(0,0,0) = camera  ────────────────>  (tx,ty,tz) = camera
++Z = forward      ────────────────>  R @ [0,0,1] = forward direction
+```
+
+#### 3. Why We Need Both Spaces
+
+**Camera Space** is necessary because:
+- **Projection happens in camera space**: To project a 3D point to image coordinates, the point must be in camera space
+- **Camera intrinsics are defined in camera space**: Focal length, principal point, distortion parameters all assume camera space
+- **Each camera has its own frame**: Different cameras have different positions and orientations
+
+**World Space** is necessary because:
+- **Multi-view geometry**: Multiple cameras need a shared reference frame to relate observations
+- **Scene reconstruction**: 3D points must be expressed in a common coordinate system
+- **Camera relationships**: We need to know where cameras are relative to each other
+
+#### 4. The Complete Pipeline
+
+Understanding camera space vs world space is crucial for the complete imaging pipeline:
+
+```
+3D Point in World Space
+        │
+        │ pose_w2c (inverse of c2w)
+        ▼
+3D Point in Camera Space
+        │
+        │ Camera Intrinsics (projection)
+        ▼
+2D Point in Image Space (pixels)
+```
+
+**Example:**
+```python
+# 1. 3D point in world space
+P_world = [10, 5, 8]  # Some point in the scene
+
+# 2. Convert to camera space
+pose_w2c = inv(pose_c2w)
+P_camera = pose_w2c @ P_world  # Now relative to camera
+
+# 3. Project to image (requires camera space!)
+# Projection uses camera intrinsics, which assume camera space
+u, v = project(P_camera, focal_length, principal_point)
+```
+
+#### 5. Why "Camera Space" vs "What Camera Sees"
+
+**Important Distinction**:
+- **Camera Space**: 3D coordinate system attached to camera (what we've been discussing)
+- **Image Space**: 2D pixel coordinates of what the camera sees (different concept)
+
+```
+Camera Space (3D)          Image Space (2D)
+───────────────            ─────────────
+3D coordinates relative    Pixel coordinates
+to camera                  (u, v) in image
+                           What appears on sensor
+```
+
+The camera pose conversion relates camera space (3D) to world space (3D). The projection step (separate) converts camera space (3D) to image space (2D).
+
+#### 6. Practical Necessity in MonST3R
+
+In MonST3R's multi-view reconstruction:
+
+1. **Each camera captures images** → Images are in image space (2D pixels)
+2. **Each camera has a pose** → Describes camera space relative to world space
+3. **3D points are reconstructed** → Expressed in world space
+4. **To verify/use points** → Must convert to each camera's space for projection
+
+Without camera space and pose conversion:
+- ❌ Cannot relate observations from different cameras
+- ❌ Cannot reconstruct 3D geometry
+- ❌ Cannot project 3D points back to images
+- ❌ Cannot understand camera relationships
+
+With camera space and pose conversion:
+- ✅ Can triangulate 3D points from multiple views
+- ✅ Can project 3D points to any camera's image
+- ✅ Can understand spatial relationships between cameras
+- ✅ Can reconstruct complete 3D scenes
+
 ### Why This Matters for MonST3R
 
-1. **Internal Representation**: MonST3R stores camera poses as `c2w` matrices in OpenCV convention
-2. **Point Projection**: To project 3D points to image coordinates, points must be in camera space
-3. **Scene Reconstruction**: All cameras share the same world space, enabling multi-view reconstruction
-4. **GLB Export**: Camera geometry is transformed from camera space to world space using `pose_c2w`
+1. **Internal Representation**: MonST3R stores camera poses as `c2w` matrices in OpenCV convention - these ARE the camera space to world space conversions
+2. **Point Projection**: To project 3D points to image coordinates, points must be in camera space (via `pose_w2c`)
+3. **Scene Reconstruction**: All cameras share the same world space, enabling multi-view reconstruction - camera space allows each camera to operate independently while world space unifies them
+4. **GLB Export**: Camera geometry is transformed from camera space to world space using `pose_c2w` - this is exactly what the pose conversion does
+5. **Multi-View Geometry**: Camera space enables each camera to have its own frame, while world space enables cameras to relate to each other and reconstruct shared 3D geometry
 
 ---
 
