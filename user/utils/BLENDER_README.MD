@@ -396,7 +396,203 @@ CAMERA_OBJECTS_COLLECTION = "MonST3R_Cameras"
 
 ## Visualization Tools
 
-### 9. `blender_animated_opengl_pointcloud.py` ⭐ **VISUALIZATION**
+### 9. `blender_animate_positions.py`
+
+**Purpose**: Simple script to animate an empty object through positions from a trajectory file (position-only, no rotation).
+
+**Scope of Application**:
+- Basic position animation
+- Simple trajectory visualization
+- Quick position keyframe setup
+- Testing trajectory data
+
+**Theoretical Foundation**:
+- Direct position keyframing
+- TUM format parsing (timestamp, position)
+- Frame mapping from timestamps
+
+**When to Use**:
+- ✅ Simple position animation without rotation
+- ✅ Quick trajectory visualization
+- ✅ Testing trajectory files
+- ❌ Not suitable when rotations are needed
+
+**How to Use**:
+```python
+# Configure at top of script:
+POSITION_FILE = r"path/to/position_openCV.txt"
+
+# Run in Blender Scripting workspace
+# Format: timestamp tx ty tz
+```
+
+**Output**:
+- Empty object with position keyframes
+- Animation from first to last position
+
+---
+
+### 10. `blender_animate_pos_rot.py`
+
+**Purpose**: Animate an empty object with both position and rotation from trajectory file using keyframes.
+
+**Scope of Application**:
+- Standard position + rotation animation
+- Keyframe-based animation
+- Direct trajectory playback
+- Simple camera animation
+
+**Theoretical Foundation**:
+- TUM trajectory parsing (timestamp, position, quaternion)
+- Quaternion conversion (TUM → Blender format)
+- Direct keyframe insertion for location and rotation
+
+**When to Use**:
+- ✅ Standard trajectory animation
+- ✅ Keyframe-based animation
+- ✅ Simple camera path visualization
+- ✅ When curve editing is not needed
+
+**How to Use**:
+```python
+# Configure at top of script:
+TRAJECTORY_FILE = r"path/to/pred_traj.txt"
+
+# Run in Blender Scripting workspace
+# Format: timestamp tx ty tz qx qy qz qw
+```
+
+**Output**:
+- Empty object with position and rotation keyframes
+- Quaternion rotation mode
+- Full trajectory animation
+
+---
+
+### 11. `blender_curve_pos_rot.py` ⭐ **NEW - CURVE-BASED ANIMATION**
+
+**Purpose**: Create curve-based path animation with Follow Path constraint and synchronized quaternion rotations.
+
+**Scope of Application**:
+- **Editable path animation**: Uses NURBS curve for smooth, editable paths
+- **Constraint-based movement**: Follow Path constraint for natural path following
+- **Synchronized rotations**: Quaternion rotations keyframed in sync with curve movement
+- **Advanced animation**: Professional animation workflow with editable curves
+
+**Theoretical Foundation**:
+- **NURBS Curve Creation**: Control points at each trajectory position
+- **Follow Path Constraint**: Uses Blender's constraint system for path following
+- **Offset Factor Animation**: Keyframes `offset_factor` (0.0 to 1.0) to move along curve
+- **Rotation Synchronization**: Quaternion rotations keyframed at same frames as path offset
+- **Frame Mapping**: Timestamps normalized to offset factors
+
+**When to Use**:
+- ✅ **Editable path animation** - Can edit curve after creation
+- ✅ **Smooth interpolation** - Better than keyframe-only animation
+- ✅ **Professional workflows** - Constraint-based animation
+- ✅ **Path editing** - Visual curve editing in Blender
+- ✅ **Camera trajectory visualization** - Smooth camera paths
+- ✅ **Animation preview** - Easy to adjust timing and path
+
+**How to Use**:
+```python
+# Configure at top of script:
+TRAJECTORY_FILE = r"path/to/pred_traj.txt"
+CURVE_OBJECT_NAME = "TrajectoryCurve"
+EMPTY_OBJECT_NAME = "CurveFollower"
+EMPTY_DISPLAY_TYPE = 'ARROWS'
+CURVE_RESOLUTION = 64
+
+# Run in Blender Scripting workspace
+# Or command-line:
+# blender --background --python blender_curve_pos_rot.py -- pred_traj.txt
+```
+
+**Features**:
+- Creates NURBS curve from trajectory positions
+- Adds Follow Path constraint to empty object
+- Keyframes path offset and rotations synchronously
+- Editable curve path (can modify in Edit Mode)
+- Smooth interpolation between points
+- Configurable coordinate system axes
+
+**Output**:
+- `TrajectoryCurve`: NURBS curve object
+- `CurveFollower`: Empty object with Follow Path constraint
+- Keyframed path offset and rotations
+- Animation ready for playback
+
+**Documentation**: See `blender_curve_pos_rot.md` for detailed usage guide and use cases.
+
+---
+
+### 12. `viser_4d_visualization.py` ⭐ **NEW - INTERACTIVE WEB VISUALIZATION**
+
+**Purpose**: Interactive 4D (3D space + time) web-based visualization of camera trajectories using Viser.
+
+**Scope of Application**:
+- **Interactive visualization**: Web-based 3D viewer accessible via browser
+- **Real-time exploration**: Navigate and explore camera trajectories interactively
+- **Animation controls**: Play/pause/reset with time slider
+- **Multi-client support**: Multiple users can view simultaneously
+- **Scene integration**: Optional GLB scene mesh loading
+
+**Theoretical Foundation**:
+- **Viser Framework**: Web-based 3D visualization server
+- **TUM Format Parsing**: Reads trajectory files (timestamp, position, quaternion)
+- **Quaternion Visualization**: Camera coordinate frames and frustums
+- **Time-based Animation**: Synchronized position and rotation over time
+- **WebSocket Communication**: Real-time updates between server and clients
+
+**When to Use**:
+- ✅ **Interactive exploration** - Explore trajectories in web browser
+- ✅ **Remote visualization** - Access via SSH port forwarding
+- ✅ **Presentation** - Share visualization with team
+- ✅ **Debugging** - Visual inspection of camera paths
+- ✅ **Quick preview** - Fast trajectory visualization without Blender
+- ✅ **Multi-user viewing** - Multiple people can view simultaneously
+
+**How to Use**:
+```bash
+# Activate conda environment
+conda activate monst3r
+
+# Run visualization
+python user/utils/viser_4d_visualization.py \
+    --trajectory demo_tmp/lady-running/pred_traj.txt \
+    --scene demo_tmp/lady-running/scene.glb \
+    --port 8080
+
+# Open browser to: http://localhost:8080
+```
+
+**Features**:
+- 3D camera trajectory path visualization
+- Camera coordinate frames at each pose
+- Camera frustum visualization (optional)
+- Time slider for navigation
+- Frame slider for jumping to specific frames
+- Play/pause/reset controls
+- Speed control (0.1x to 5.0x)
+- Visibility toggles (frames, frustums, trajectory)
+- Optional scene mesh loading (GLB)
+- Real-time frame information display
+
+**Requirements**:
+- `viser` package (install: `pip install viser`)
+- Trajectory file in TUM format
+- Optional: GLB scene file
+
+**Output**:
+- Web server running on specified port
+- Interactive 3D visualization in browser
+- Real-time animation controls
+
+**Documentation**: See `VISER_4D_VISUALIZATION_README.md` for detailed usage guide.
+
+---
+
+### 13. `blender_animated_opengl_pointcloud.py` ⭐ **VISUALIZATION**
 
 **Purpose**: Create animated point cloud visualization that updates per frame based on MonST3R depth maps.
 
@@ -459,7 +655,7 @@ MAX_POINTS_PER_FRAME = 100000
 
 ## Format Conversion Tools
 
-### 10. `convert_to_colmap.py`
+### 14. `convert_to_colmap.py`
 
 **Purpose**: Convert MonST3R output to COLMAP format for use with Blender's photogrammetry_importer addon.
 
@@ -595,6 +791,54 @@ colmap_output/
    → Cameras animate together
 ```
 
+### Curve-Based Animation Workflow
+
+**For editable, smooth camera paths**:
+
+```
+1. Run blender_curve_pos_rot.py
+   python user/utils/blender_curve_pos_rot.py -- pred_traj.txt
+   → Creates NURBS curve and Follow Path constraint
+
+2. (Optional) Edit curve path
+   → Select TrajectoryCurve object
+   → Enter Edit Mode (Tab)
+   → Move control points to adjust path
+
+3. Play animation
+   → Empty object follows curve smoothly
+   → Rotations synchronized with path
+
+4. (Optional) Attach camera
+   → Create camera object
+   → Parent to CurveFollower empty
+   → Camera follows path with rotations
+```
+
+### Interactive Web Visualization Workflow
+
+**For browser-based exploration**:
+
+```
+1. Activate conda environment
+   conda activate monst3r
+
+2. Run viser visualization
+   python user/utils/viser_4d_visualization.py \
+       --trajectory pred_traj.txt \
+       --scene scene.glb \
+       --port 8080
+
+3. Open browser
+   → Navigate to http://localhost:8080
+   → Use controls to explore trajectory
+   → Play animation, adjust speed, toggle visibility
+
+4. (Optional) Remote access
+   → SSH port forwarding: ssh -L 8080:localhost:8080 user@server
+   → Access from local browser
+```
+
 ---
 
 ## Theoretical Foundations
@@ -689,6 +933,10 @@ Where:
 | `blender_compare_transforms.py` | Compare transforms | Debugging | High | Medium |
 | `blender_analyze_camera_differences.py` | Quick analysis | Validation | Medium | Low |
 | `blender_analyze_camera_mismatch.py` | Simple analysis | Quick check | Medium | Low |
+| `blender_animate_positions.py` | Position animation | Simple position keyframes | Medium | Low |
+| `blender_animate_pos_rot.py` | Position + rotation | Standard keyframe animation | Medium | Low |
+| `blender_curve_pos_rot.py` | ⭐ Curve-based animation | Editable path animation | High | Medium |
+| `viser_4d_visualization.py` | ⭐ Web visualization | Interactive exploration | High | Medium |
 | `blender_animated_opengl_pointcloud.py` | ⭐ Animated visualization | Dynamic visualization | High | Medium |
 | `convert_to_colmap.py` | COLMAP conversion | Addon integration | High | Medium |
 
@@ -699,9 +947,12 @@ Where:
 ### Most Common Use Cases
 
 1. **Import cameras matching GLB geometry**: `blender_import_cameras_from_glb.py`
-2. **Animated point cloud**: `blender_animated_opengl_pointcloud.py`
-3. **COLMAP format**: `convert_to_colmap.py`
-4. **Debugging cameras**: Use debugging workflow (scripts #4, #5, #6)
+2. **Editable curve-based animation**: `blender_curve_pos_rot.py` ⭐ **NEW**
+3. **Interactive web visualization**: `viser_4d_visualization.py` ⭐ **NEW**
+4. **Animated point cloud**: `blender_animated_opengl_pointcloud.py`
+5. **Standard keyframe animation**: `blender_animate_pos_rot.py`
+6. **COLMAP format**: `convert_to_colmap.py`
+7. **Debugging cameras**: Use debugging workflow (scripts #4, #5, #6)
 
 ### File Requirements
 
@@ -731,6 +982,8 @@ Where:
 - `fix_blender_import_camera_from_glb.md` - Detailed debugging guide
 - `blender_animated_opengl_pointcloud.md` - Point cloud visualization guide
 - `convert_to_colmap.md` - COLMAP conversion details
+- `blender_curve_pos_rot.md` - ⭐ **NEW** Curve-based animation guide with use cases
+- `VISER_4D_VISUALIZATION_README.md` - ⭐ **NEW** Interactive web visualization guide
 
 ---
 
@@ -760,4 +1013,31 @@ Where:
 
 ---
 
-*Last updated: Based on MonST3R utilities analysis*
+## Animation Script Comparison
+
+| Feature | `blender_animate_positions.py` | `blender_animate_pos_rot.py` | `blender_curve_pos_rot.py` |
+|---------|-------------------------------|------------------------------|----------------------------|
+| **Position** | ✅ Keyframes | ✅ Keyframes | ✅ Curve (editable) |
+| **Rotation** | ❌ | ✅ Keyframes | ✅ Keyframes (synced) |
+| **Path Editing** | ❌ | ❌ | ✅ Edit Mode |
+| **Smooth Interpolation** | Limited | Limited | Excellent |
+| **Constraint-based** | ❌ | ❌ | ✅ Follow Path |
+| **Use Case** | Simple position | Standard animation | Advanced editing |
+| **Best For** | Testing | Standard playback | Professional workflows |
+
+## Visualization Tool Comparison
+
+| Feature | `blender_animated_opengl_pointcloud.py` | `viser_4d_visualization.py` |
+|---------|------------------------------------------|----------------------------|
+| **Platform** | Blender (desktop) | Web browser |
+| **Point Cloud** | ✅ Animated | ❌ |
+| **Camera Trajectory** | ❌ | ✅ Interactive |
+| **Scene Mesh** | ❌ | ✅ Optional GLB |
+| **Animation Controls** | Timeline | Play/Pause/Slider |
+| **Multi-user** | ❌ | ✅ |
+| **Remote Access** | ❌ | ✅ SSH forwarding |
+| **Best For** | Point cloud animation | Trajectory exploration |
+
+---
+
+*Last updated: Added curve-based animation and web visualization tools*
